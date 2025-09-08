@@ -206,7 +206,15 @@ ax2.tick_params(axis='y', labelcolor=color, length=0)
 ax1.axvline(5, color='red', linestyle='--', label='RECIST v1.1')
 
 fig.tight_layout()  # otherwise the right y-label is slightly clipped
-fig.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+# Combine handles and labels from both axes
+handles1, labels1 = ax1.get_legend_handles_labels()
+handles2, labels2 = ax2.get_legend_handles_labels()
+handles = handles1 + handles2
+labels = labels1 + labels2
+
+# Place legend outside, 1 row x 3 columns
+fig.legend(handles, labels, bbox_to_anchor=(1.05, 1), loc='upper left', ncol=3)
 sns.despine()
 plt.show()
 
@@ -276,17 +284,17 @@ for i in range(N):
         data.append([i, j, diameter_pre, diameter_change, diameter_post, location, volume, diameter_3Dmax, diameter_majorAx, diameter_minorAx])
 
 # Convert to DataFrame
-synth_lesions = pd.DataFrame(data, columns=['patient', 'lesion', 'diameter-pre', 'diameter_change', 'diameter-post', 'location', 'volume (cc); contoured', 'diameter_3Dmax', 'diameter_majorAx', 'diameter_minorAx'])
-synth_lesions['patient'] = synth_lesions['patient'].astype(str)
-patients, counts = np.unique(synth_lesions['patient'], return_counts=True)
+synth_lesions_oct = pd.DataFrame(data, columns=['patient', 'lesion', 'diameter-pre', 'diameter_change', 'diameter-post', 'location', 'volume (cc); contoured', 'diameter_3Dmax', 'diameter_majorAx', 'diameter_minorAx'])
+synth_lesions_oct['patient'] = synth_lesions_oct['patient'].astype(str)
+patients_oct, counts_oct = np.unique(synth_lesions_oct['patient'], return_counts=True)
 # %%
 from scipy.stats import binned_statistic
 
 plt.rcParams.update({'font.size': 16})
 
 # Concatenate diameter and volume measurements
-diameters = np.concatenate([oct_pre['original_shape_Maximum2DDiameterSlice'].values, rad_data['original_shape_Maximum2DDiameterSlice'].values]) / 10
-volumes = np.concatenate([oct_pre['original_shape_VoxelVolume'].values, rad_data['volume (cc); contoured'].values])
+diameters = np.concatenate([oct_pre['original_shape_Maximum2DDiameterSlice'].values, synth_lesions['diameter-pre'].values]) / 10
+volumes = np.concatenate([oct_pre['original_shape_VoxelVolume'].values, synth_lesions['volume (cc); contoured'].values])
 
 expected_volume = 4/3 * np.pi * (np.linspace(0,25,100)/2)**3
 
@@ -312,15 +320,15 @@ confidence_interval_upper = expected_volume + 1.96 * std_volume_variation
 confidence_interval_lower = expected_volume - 1.96 * std_volume_variation
 
 # Scatter plot of volume versus diameter with confidence intervals
-plt.figure(figsize=(8, 6))
+plt.figure(figsize=(8, 4))
 plt.scatter(diameters, volumes, alpha=0.5, label='Observed volume')
 plt.plot(np.linspace(0, 25, 100), expected_volume, color='red', label='Expected volume')
-plt.fill_between(np.linspace(0, 25, 100), confidence_interval_lower, confidence_interval_upper, color='red', alpha=0.2, label='95% Confidence Interval')
+# plt.fill_between(np.linspace(0, 25, 100), confidence_interval_lower, confidence_interval_upper, color='red', alpha=0.2, label='95% Confidence Interval')
 plt.ylim(0, 2000)
 plt.xlim(0, 20)
 plt.xlabel('Diameter (cm)')
 plt.ylabel(r'Volume ($cm^3$)')
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
 sns.despine(trim=True, offset=5)
 plt.show()
 
