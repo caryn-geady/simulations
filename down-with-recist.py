@@ -289,6 +289,8 @@ synth_lesions_oct['patient'] = synth_lesions_oct['patient'].astype(str)
 patients_oct, counts_oct = np.unique(synth_lesions_oct['patient'], return_counts=True)
 # %%
 from scipy.stats import binned_statistic
+import os
+import csv
 
 plt.rcParams.update({'font.size': 16})
 
@@ -376,3 +378,158 @@ plt.show()
 # plt.show()
 # %%
 
+recist = pd.read_csv('/Users/caryngeady/Documents/GitHub/Mixed-Response-Work/spreadsheets/SARC021_RECIST.csv')
+patients, counts = np.unique(recist.USUBJID, return_counts=True)
+
+# Compute the cumulative sum (CDF, not normalized)
+# Start with total number of patients, subtract at each step the number of patients with x assessments
+binned_counts = np.bincount(counts)[1:]  # skip zero bin
+cdf_counts = np.array([len(counts) - np.sum(binned_counts[:i]) for i in range(len(binned_counts))])
+
+# Reverse the order for plotting
+reversed_cdf_counts = cdf_counts
+
+plt.figure(figsize=(8, 4), facecolor='black')
+plt.style.use('dark_background')
+plt.step(range(1, len(reversed_cdf_counts)+1), reversed_cdf_counts, where='mid', color='green', linewidth=2)
+plt.xlabel('Number of RECIST Assessments')
+plt.ylabel('Number of Patients')
+sns.despine()
+plt.gcf().patch.set_facecolor('black')
+plt.show()
+
+patients_3plusAssess = patients[counts >= 3]
+
+# for each USUBJID, determine if there was a PD assessment in 'RECIST Overall Response Assessment'
+pd_assessments = recist[recist['RECIST Overall Response Assessment'] == 'PD']['USUBJID'].unique()
+non_pd_assessments = np.setdiff1d(patients, pd_assessments)
+
+# how 
+
+# %%
+
+surv = pd.read_csv('/Users/caryngeady/Documents/GitHub/Mixed-Response-Work/spreadsheets/SARC021_survival.csv')
+tumor_measure = pd.read_csv('/Users/caryngeady/Documents/GitHub/Mixed-Response-Work/spreadsheets/SARC021_Individual_Tumor.csv')
+
+# %%
+
+patients, lesion_counts = np.unique(tumor_measure.USUBJID[tumor_measure['Tumor Identification']=='TARGET'], return_counts=True)
+patients_3pluslesions = patients[lesion_counts >= 4]
+
+# %%
+
+patients_shortList = np.intersect1d(patients_3plusAssess, patients_3pluslesions)
+print(f'Number of patients with 3+ RECIST assessments and 3+ target lesions: {len(patients_shortList)}')
+
+# %%
+pd_patients = np.intersect1d(patients_shortList, pd_assessments)
+non_pd_patients = np.intersect1d(patients_shortList, non_pd_assessments)
+
+print("Breakdown by arm for PD patients:")
+print(surv[surv['USUBJID'].isin(pd_patients)]['ARM'].value_counts())
+print("\nBreakdown by arm for non-PD patients:")
+print(surv[surv['USUBJID'].isin(non_pd_patients)]['ARM'].value_counts())
+
+# %%
+
+sarc_radiomics = pd.read_csv('/Users/caryngeady/Documents/GitHub/Quantitative-Review/Data/SARC021/SARC021_radiomics.csv')
+
+# Randomly select 5 PD patients from each arm, provded they are present in the sarc_radiomics dataset (**this means there's baseline contours**)
+pd_arms = surv[surv['USUBJID'].isin(pd_patients)][['USUBJID', 'ARM']]
+non_pd_arms = surv[surv['USUBJID'].isin(non_pd_patients)][['USUBJID', 'ARM']]
+
+print("Randomly selected PD patients (5 per arm, present in rad_data):")
+for arm in pd_arms['ARM'].unique():
+    eligible_pd = pd_arms[pd_arms['ARM'] == arm]
+    eligible_pd = eligible_pd[eligible_pd['USUBJID'].astype(str).isin(sarc_radiomics.USUBJID)]
+    print(f"\nArm: {arm}")
+    print('Eligible PD patients:')
+    print(eligible_pd)
+    selected = eligible_pd.sample(n=min(5, eligible_pd.shape[0]), random_state=42)
+    print(f"\nArm: {arm}")
+    print(selected['USUBJID'].tolist())
+
+print("\nRandomly selected non-PD patients (5 per arm, present in rad_data):")
+for arm in non_pd_arms['ARM'].unique():
+    eligible_nonpd = non_pd_arms[non_pd_arms['ARM'] == arm]
+    eligible_nonpd = eligible_nonpd[eligible_nonpd['USUBJID'].astype(str).isin(sarc_radiomics.USUBJID)]
+    print(f"\nArm: {arm}")
+    print('Eligible non-PD patients:')
+    print(eligible_nonpd)
+    selected = eligible_nonpd.sample(n=min(5, eligible_nonpd.shape[0]), random_state=42)
+    print(f"\nArm: {arm}")
+    print(selected['USUBJID'].tolist())
+
+# %%
+group1_path = os.path.expanduser('~/Desktop/AAuRA-SARC021/Group1')
+group2_path = os.path.expanduser('~/Desktop/AAuRA-SARC021/Group2')
+
+group1 = [name for name in os.listdir(group1_path) if os.path.isdir(os.path.join(group1_path, name))]
+group2 = [name for name in os.listdir(group2_path) if os.path.isdir(os.path.join(group2_path, name))]
+
+# Load tumor_measure if not already loaded
+tumor_measure_path = '/Users/caryngeady/Documents/GitHub/Mixed-Response-Work/spreadsheets/SARC021_Individual_Tumor.csv'
+if 'tumor_measure' not in locals():
+    tumor_measure = pd.read_csv(tumor_measure_path)
+
+# Load sarc_radiomics if not already loaded
+if 'sarc_radiomics' not in locals():
+    sarc_radiomics = pd.read_csv('/Users/caryngeady/Documents/GitHub/Quantitative-Review/Data/SARC021/SARC021_radiomics.csv')
+
+# Only include tumors with 'Tumor Identification' of 'TARGET' or 'NON-TARGET'
+def extract_tumor_info(usubjid_list, tumor_measure_df):
+    info = {}
+    for sar_id in usubjid_list:
+        # Convert SAR_5SAR2_xxxyyy to TH-CR-04060xxxyyy for matching
+        usubjid = f'TH-CR-04060{sar_id.replace("SAR_5SAR2_", "")}'
+        matches = tumor_measure_df[
+            (tumor_measure_df['USUBJID'] == usubjid) &
+            (tumor_measure_df['Tumor Identification'].isin(['TARGET', 'NON-TARGET']))
+        ][['Tumor Identification', 'Tumor Location']]
+        info[sar_id] = matches.drop_duplicates().to_dict(orient='records')
+    return info
+
+# For sarc_radiomics, extract LABEL for each matching USUBJID (using TH-CR-04060xxxyyy format)
+def extract_labels(sar_id_list, rad_df):
+    labels = {}
+    for sar_id in sar_id_list:
+        usubjid = f'TH-CR-04060{sar_id.replace("SAR_5SAR2_", "")}'
+        matches = rad_df[rad_df['USUBJID'] == usubjid]['LABEL'].unique() if 'USUBJID' in rad_df.columns else []
+        labels[sar_id] = list(matches)
+    return labels
+
+group1_tumor_info = extract_tumor_info(group1, tumor_measure)
+group2_tumor_info = extract_tumor_info(group2, tumor_measure)
+group1_labels = extract_labels(group1, sarc_radiomics)
+group2_labels = extract_labels(group2, sarc_radiomics)
+
+# Prepare rows for spreadsheet
+def prepare_rows(group_list, group_name, tumor_info, labels):
+    rows = []
+    for sar_id in group_list:
+        tumors = tumor_info.get(sar_id, [])
+        label_list = labels.get(sar_id, [])
+        tumor_ids = "; ".join([str(t['Tumor Identification']) for t in tumors]) if tumors else ""
+        tumor_locs = "; ".join([str(t['Tumor Location']) for t in tumors]) if tumors else ""
+        label_str = "; ".join(label_list)
+        rows.append({
+            'Group': group_name,
+            'SAR_ID': sar_id,
+            'Tumor Identifications': tumor_ids,
+            'Tumor Locations': tumor_locs,
+            'Radiomics LABELs': label_str
+        })
+    return rows
+
+rows = []
+rows += prepare_rows(group1, 'Group1', group1_tumor_info, group1_labels)
+rows += prepare_rows(group2, 'Group2', group2_tumor_info, group2_labels)
+
+# Create DataFrame and save as CSV
+spreadsheet_df = pd.DataFrame(rows, columns=['Group', 'SAR_ID', 'Tumor Identifications', 'Tumor Locations', 'Radiomics LABELs'])
+output_path = os.path.expanduser('~/Desktop/AAuRA-SARC021/AAuRA_SARC021_patient_summary.csv')
+spreadsheet_df.to_csv(output_path, index=False)
+
+print(f"Spreadsheet saved to {output_path}")
+print(spreadsheet_df.head())
+# %%
